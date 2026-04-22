@@ -18,7 +18,7 @@ Repository = "https://github.com/hamchowderr/ComfyUI-Sophon"
 Documentation = "https://registry.scalar.com/@liqhtworks/apis/sophon-encoding-api"
 
 [tool.comfy]
-PublisherId = "otaku-solutions"
+PublisherId = "lightworks"
 DisplayName = "Sophon"
 Icon = ""
 includes = []
