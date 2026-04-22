@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "sophon",
+  "project_id": "27d918d1-2bab-41fe-93cf-10b5cff73170"
+}
