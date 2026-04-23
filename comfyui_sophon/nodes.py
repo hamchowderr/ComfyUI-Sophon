@@ -107,12 +107,17 @@ def _format_stats(job: dict[str, Any]) -> str:
 
 
 def _build_preview_ui(local_path: str, job: dict[str, Any]) -> dict | None:
-    """Compose a ui dict with inline video preview and stats text."""
+    """Compose a ui dict the sophon-preview.js extension knows how to render.
+
+    Uses a custom ``sophon_video`` key so the client-side code creates a
+    real <video> element scaled to the node width with the video's native
+    aspect ratio — the core {images, animated} path renders as a still-frame
+    preview that zooms rather than fits.
+    """
     payload: dict[str, Any] = {}
     sr = _preview_result(local_path)
     if sr is not None:
-        payload["images"] = [sr]
-        payload["animated"] = (True,)
+        payload["sophon_video"] = [sr]
     stats = _format_stats(job)
     if stats:
         payload["text"] = [stats]
