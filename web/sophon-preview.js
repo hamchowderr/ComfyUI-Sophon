@@ -143,7 +143,32 @@ function onExecutedMessage(node, message) {
     relayout(node);
 }
 
+function suppressNativeVideoPreview(node) {
+    // The core frontend's useNodeVideo auto-creates a DOM widget named
+    // "video-preview" for any video_upload combo, bundled with the upload
+    // button. Intercept addDOMWidget and return a dummy for that widget so
+    // only our own preview renders.
+    if (node.__sophonSuppressed) return;
+    node.__sophonSuppressed = true;
+    const origAddDom = node.addDOMWidget.bind(node);
+    node.addDOMWidget = function (name, type, element, options) {
+        if (name === "video-preview") {
+            return {
+                name,
+                type,
+                value: "",
+                serialize: false,
+                computeSize: () => [0, -4],
+                computeLayoutSize: () => ({ minHeight: 0, minWidth: 0 }),
+                onRemove: () => {},
+            };
+        }
+        return origAddDom(name, type, element, options);
+    };
+}
+
 function hookSourcePreview(node) {
+    suppressNativeVideoPreview(node);
     const widget = node.widgets?.find((w) => w.name === "video");
     if (!widget) return;
 
