@@ -1,8 +1,16 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const SOPHON_NODES = new Set([
+// Nodes that produce an encoded output — we show the result video here.
+const OUTPUT_PREVIEW_NODES = new Set([
     "SophonDownloadOutput",
+    "SophonEncodeVideo",
+]);
+
+// Nodes that take a source video via the "video" combo — we preview the
+// source so picking / uploading a file resizes the node immediately.
+const SOURCE_PREVIEW_NODES = new Set([
+    "SophonUpload",
     "SophonEncodeVideo",
 ]);
 
@@ -12,6 +20,16 @@ function buildViewUrl(entry) {
     if (entry.subfolder) p.set("subfolder", entry.subfolder);
     p.set("type", entry.type || "output");
     return api.apiURL(`/view?${p.toString()}&t=${Date.now()}`);
+}
+
+function splitInputPath(value) {
+    // Combo values may include a subfolder prefix (e.g. "sub/clip.mp4").
+    if (!value) return null;
+    const norm = value.replace(/\\/g, "/");
+    const idx = norm.lastIndexOf("/");
+    return idx < 0
+        ? { filename: norm, subfolder: "" }
+        : { filename: norm.slice(idx + 1), subfolder: norm.slice(0, idx) };
 }
 
 function ensureVideoDom(node) {
@@ -58,7 +76,8 @@ function ensureVideoDom(node) {
     widget.computeSize = function (width) {
         const aspect = node._sophonAspect || 16 / 9;
         const inner = Math.max(64, width - 16);
-        const videoH = Math.round(inner / aspect);
+        const hasVideo = !!video.src;
+        const videoH = hasVideo ? Math.round(inner / aspect) : 0;
         const statsH = stats.textContent ? Math.max(24, stats.scrollHeight || 60) : 0;
         return [width, videoH + statsH + 16];
     };
@@ -67,43 +86,81 @@ function ensureVideoDom(node) {
     return node._sophonDom;
 }
 
-function applyMessage(node, message) {
+function setVideoSrc(node, url) {
+    const dom = ensureVideoDom(node);
+    if (dom.video.src === url) return;
+    dom.video.src = url;
+    dom.video.addEventListener(
+        "loadedmetadata",
+        () => {
+            if (dom.video.videoWidth && dom.video.videoHeight) {
+                node._sophonAspect = dom.video.videoWidth / dom.video.videoHeight;
+                node.setSize(node.computeSize());
+                node.setDirtyCanvas(true, true);
+            }
+        },
+        { once: true }
+    );
+    node.setSize(node.computeSize());
+    node.setDirtyCanvas(true, true);
+}
+
+function onExecutedMessage(node, message) {
     const entries = message.sophon_video || [];
     const statsLines = message.text || [];
     if (!entries.length && !statsLines.length) return;
-
     const dom = ensureVideoDom(node);
-
-    if (entries.length) {
-        const src = buildViewUrl(entries[0]);
-        dom.video.src = src;
-        dom.video.addEventListener(
-            "loadedmetadata",
-            () => {
-                if (dom.video.videoWidth && dom.video.videoHeight) {
-                    node._sophonAspect = dom.video.videoWidth / dom.video.videoHeight;
-                    node.setSize(node.computeSize());
-                    node.setDirtyCanvas(true, true);
-                }
-            },
-            { once: true }
-        );
-    }
-
+    if (entries.length) setVideoSrc(node, buildViewUrl(entries[0]));
     dom.stats.textContent = statsLines.join("\n");
     node.setSize(node.computeSize());
     node.setDirtyCanvas(true, true);
 }
 
+function hookSourcePreview(node) {
+    const widget = node.widgets?.find((w) => w.name === "video");
+    if (!widget) return;
+
+    const render = (value) => {
+        const parts = splitInputPath(value);
+        if (!parts) return;
+        setVideoSrc(node, buildViewUrl({ ...parts, type: "input" }));
+    };
+
+    // Wrap the combo's callback so both dropdown-selection and upload-completion
+    // drive the preview. ComfyUI's upload widget calls this callback after the
+    // file is registered in input/.
+    const origCallback = widget.callback;
+    widget.callback = function (value) {
+        const r = origCallback?.apply(this, arguments);
+        render(value);
+        return r;
+    };
+
+    // Also render immediately on load if there is already a value.
+    if (widget.value) render(widget.value);
+}
+
 app.registerExtension({
     name: "sophon.preview",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (!SOPHON_NODES.has(nodeData?.name)) return;
+        const name = nodeData?.name;
+        if (!name) return;
 
-        const origOnExecuted = nodeType.prototype.onExecuted;
-        nodeType.prototype.onExecuted = function (message) {
-            origOnExecuted?.apply(this, arguments);
-            if (message) applyMessage(this, message);
-        };
+        if (OUTPUT_PREVIEW_NODES.has(name)) {
+            const origOnExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (message) {
+                origOnExecuted?.apply(this, arguments);
+                if (message) onExecutedMessage(this, message);
+            };
+        }
+
+        if (SOURCE_PREVIEW_NODES.has(name)) {
+            const origOnNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                const r = origOnNodeCreated?.apply(this, arguments);
+                hookSourcePreview(this);
+                return r;
+            };
+        }
     },
 });
