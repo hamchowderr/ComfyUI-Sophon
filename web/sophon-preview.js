@@ -73,17 +73,31 @@ function ensureVideoDom(node) {
         serialize: false,
         hideOnZoom: false,
     });
+    // Height is derived deterministically from the known aspect ratio and
+    // stats line count. scrollHeight measurement is unreliable because the
+    // DOM may not have laid out by the time ComfyUI asks for the size.
     widget.computeSize = function (width) {
         const aspect = node._sophonAspect || 16 / 9;
         const inner = Math.max(64, width - 16);
-        const hasVideo = !!video.src;
-        const videoH = hasVideo ? Math.round(inner / aspect) : 0;
-        const statsH = stats.textContent ? Math.max(24, stats.scrollHeight || 60) : 0;
-        return [width, videoH + statsH + 16];
+        const videoH = video.src ? Math.round(inner / aspect) : 0;
+        const lines = stats.textContent ? stats.textContent.split("\n").length : 0;
+        const statsH = lines ? lines * 15 + 12 : 0;
+        return [width, videoH + statsH + 12];
     };
 
     node._sophonDom = { container, video, stats, widget };
     return node._sophonDom;
+}
+
+function relayout(node) {
+    // Ask ComfyUI for the minimum size then grow to it. Width stays whatever
+    // the user already set; only height expands to fit the widget stack.
+    requestAnimationFrame(() => {
+        const [minW, minH] = node.computeSize();
+        const curW = Math.max(node.size?.[0] || 0, minW);
+        node.setSize([curW, minH]);
+        node.setDirtyCanvas(true, true);
+    });
 }
 
 function setVideoSrc(node, url) {
@@ -95,14 +109,12 @@ function setVideoSrc(node, url) {
         () => {
             if (dom.video.videoWidth && dom.video.videoHeight) {
                 node._sophonAspect = dom.video.videoWidth / dom.video.videoHeight;
-                node.setSize(node.computeSize());
-                node.setDirtyCanvas(true, true);
+                relayout(node);
             }
         },
         { once: true }
     );
-    node.setSize(node.computeSize());
-    node.setDirtyCanvas(true, true);
+    relayout(node);
 }
 
 function onExecutedMessage(node, message) {
@@ -112,8 +124,7 @@ function onExecutedMessage(node, message) {
     const dom = ensureVideoDom(node);
     if (entries.length) setVideoSrc(node, buildViewUrl(entries[0]));
     dom.stats.textContent = statsLines.join("\n");
-    node.setSize(node.computeSize());
-    node.setDirtyCanvas(true, true);
+    relayout(node);
 }
 
 function hookSourcePreview(node) {

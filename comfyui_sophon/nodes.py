@@ -381,7 +381,7 @@ class SophonEncodeVideo(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="SophonEncodeVideo",
-            display_name="Sophon Encode Video (one-shot)",
+            display_name="Sophon Encode Video",
             category="sophon",
             description="Upload → encode → download in a single node.",
             is_output_node=True,
