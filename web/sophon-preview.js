@@ -85,20 +85,30 @@ function ensureVideoDom(node) {
     stats.style.boxSizing = "border-box";
     container.appendChild(stats);
 
-    const widget = node.addDOMWidget("sophon_preview", "div", container, {
+    const widget = node.addDOMWidget("sophon_preview", "preview", container, {
         serialize: false,
         hideOnZoom: false,
     });
     // Height is derived deterministically from the known aspect ratio and
     // stats line count. scrollHeight measurement is unreliable because the
     // DOM may not have laid out by the time ComfyUI asks for the size.
-    widget.computeSize = function (width) {
+    const measure = () => {
+        const width = Math.max(128, node.size?.[0] || 256);
         const aspect = node._sophonAspect || 16 / 9;
         const inner = Math.max(64, width - 16);
         const videoH = video.src ? Math.round(inner / aspect) : 0;
         const lines = stats.textContent ? stats.textContent.split("\n").length : 0;
         const statsH = lines ? lines * 15 + 12 : 0;
-        return [width, videoH + statsH + 12];
+        return { width, height: videoH + statsH + 12 };
+    };
+    widget.computeSize = function () {
+        const { width, height } = measure();
+        return [width, height];
+    };
+    // V3 layout engine uses this one; legacy computeSize is ignored.
+    widget.computeLayoutSize = function () {
+        const { width, height } = measure();
+        return { minHeight: height, minWidth: Math.min(width, 128) };
     };
 
     node._sophonDom = { container, video, stats, widget };
@@ -112,6 +122,7 @@ function relayout(node) {
         const [minW, minH] = node.computeSize();
         const curW = Math.max(node.size?.[0] || 0, minW);
         node.setSize([curW, minH]);
+        node.onResize?.(node.size);
         node.setDirtyCanvas(true, true);
     });
 }
