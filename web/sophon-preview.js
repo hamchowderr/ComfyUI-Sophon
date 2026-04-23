@@ -32,10 +32,26 @@ function splitInputPath(value) {
         : { filename: norm.slice(idx + 1), subfolder: norm.slice(0, idx) };
 }
 
+function cleanupOrphanElements() {
+    // A DOM widget whose node was removed can leave its element floating in
+    // the document. Sweep for any sophon preview containers whose tagged
+    // node is gone and detach them.
+    for (const el of document.querySelectorAll("[data-sophon-preview]")) {
+        const nodeId = el.dataset.sophonNodeId;
+        const stillAlive = nodeId && app.graph?._nodes?.some((n) => String(n.id) === nodeId);
+        if (!stillAlive) el.remove();
+    }
+}
+
 function ensureVideoDom(node) {
-    if (node._sophonDom) return node._sophonDom;
+    if (node._sophonDom?.container?.isConnected) return node._sophonDom;
+    // Clear stale DOM pointer if the previous container was detached.
+    if (node._sophonDom) node._sophonDom = null;
+    cleanupOrphanElements();
 
     const container = document.createElement("div");
+    container.dataset.sophonPreview = "1";
+    container.dataset.sophonNodeId = String(node.id);
     container.style.display = "flex";
     container.style.flexDirection = "column";
     container.style.alignItems = "center";
@@ -157,6 +173,11 @@ app.registerExtension({
         const name = nodeData?.name;
         if (!name) return;
 
+        // Guard against double registration (e.g. if the extension file is
+        // loaded twice). Each wrapper would otherwise chain and fire twice.
+        if (nodeType.prototype.__sophonWrapped) return;
+        nodeType.prototype.__sophonWrapped = true;
+
         if (OUTPUT_PREVIEW_NODES.has(name)) {
             const origOnExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (message) {
@@ -173,5 +194,14 @@ app.registerExtension({
                 return r;
             };
         }
+
+        const origOnRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            if (this._sophonDom?.container) {
+                this._sophonDom.container.remove();
+                this._sophonDom = null;
+            }
+            origOnRemoved?.apply(this, arguments);
+        };
     },
 });
