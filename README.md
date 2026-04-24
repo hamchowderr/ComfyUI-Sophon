@@ -1,4 +1,4 @@
-# ComfyUI-Sophon
+# ComfyUI-SOPHON
 
 ComfyUI custom nodes for the [Sophon](https://sophon.liqhtworks.xyz) HEVC encoding API by Liqhtworks. Built against the V3 ComfyUI schema (`comfy_api.latest`) for forward compatibility with Comfy Cloud.
 
